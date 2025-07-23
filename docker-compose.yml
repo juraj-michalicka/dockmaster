@@ -1,0 +1,56 @@
+version: '3.9'
+
+services:
+  nginx:
+    image: nginx:latest
+    container_name: nginx-master
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/log:/var/log/nginx
+    depends_on:
+      - mailpit
+    networks:
+      - dockmaster
+
+  db:
+    image: mysql:8.0
+    container_name: dock-database
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: dockmaster
+      MYSQL_USER: dockuser
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:dockpass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - dockmaster
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: dock-mailpit
+    expose:
+      - "8025"
+    networks:
+      - dockmaster
+
+# Example for adding more services:
+#  monitor:
+#    image: some-monitoring-tool
+#    ...
+#    networks:
+#      - dockmaster
+
+volumes:
+  db_data:
+
+networks:
+  dockmaster:
+    driver: bridge 
