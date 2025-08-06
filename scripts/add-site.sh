@@ -26,6 +26,14 @@ DOMAIN="$PROJECT_NAME${DNSMASQ_DOMAIN:-.test}"
 CONF_PATH="nginx/conf.d/$PROJECT_NAME.conf"
 CERTS_PATH="nginx/certs"
 
+# Add domain to /etc/hosts
+if [ -f "scripts/add-test-domain.sh" ]; then
+  echo "Adding $DOMAIN to /etc/hosts..."
+  sh scripts/add-test-domain.sh "$DOMAIN"
+else
+  echo "Warning: add-test-domain.sh not found, manually add $DOMAIN to /etc/hosts"
+fi
+
 # Generate certificate with mkcert
 if ! command -v mkcert >/dev/null 2>&1; then
   echo "mkcert is not installed!"
