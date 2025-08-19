@@ -1,9 +1,10 @@
 #!/bin/sh
 
-# Usage: ./add-site.sh project_name target_container [type] [port]
+# Usage: ./add-site.sh project_name target_container [type] [port] [domain]
 # Example: ./add-site.sh novyprojekt app-kontajner ssl
 #          ./add-site.sh novyprojekt app-kontajner fpm 9000
 #          ./add-site.sh novyprojekt app-kontajner
+#          ./add-site.sh novyprojekt app-kontajner 80 80 custom-domain.local
 
 set -e
 
@@ -16,13 +17,25 @@ PROJECT_NAME="$1"
 TARGET="$2"
 TYPE="${3:-80}"
 PORT="$4"
+CUSTOM_DOMAIN="$5"
 
 if [ -z "$PROJECT_NAME" ] || [ -z "$TARGET" ]; then
-  echo "Usage: $0 project_name target_container [type] [port]"
+  echo "Usage: $0 project_name target_container [type] [port] [domain]"
+  echo "Examples:"
+  echo "  $0 novyprojekt app-kontajner ssl"
+  echo "  $0 novyprojekt app-kontajner fpm 9000"
+  echo "  $0 novyprojekt app-kontajner"
+  echo "  $0 novyprojekt app-kontajner 80 80 custom-domain.local"
   exit 1
 fi
 
-DOMAIN="$PROJECT_NAME${DNSMASQ_DOMAIN:-.test}"
+# Use custom domain if provided, otherwise construct from project name and DNSMASQ_DOMAIN
+if [ -n "$CUSTOM_DOMAIN" ]; then
+  DOMAIN="$CUSTOM_DOMAIN"
+else
+  DOMAIN="$PROJECT_NAME${DNSMASQ_DOMAIN:-.test}"
+fi
+
 CONF_PATH="nginx/conf.d/$PROJECT_NAME.conf"
 CERTS_PATH="nginx/certs"
 
