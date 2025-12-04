@@ -4,7 +4,8 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 ## Features
 
-- Master Nginx reverse proxy for routing requests to your local projects
+- **dock-proxy**: Nginx reverse proxy for routing requests to localhost ports (your host machine services)
+- **nginx-master** (optional): Nginx reverse proxy for routing to Docker containers on dockmaster network
 - MySQL database container
 - Mailpit for email testing
 - Easy to extend with more services (monitoring, helpers, etc.)
@@ -22,9 +23,10 @@ DockMaster is a local development environment manager inspired by tools like Lar
    ```
 3. Add your projects and configure Nginx as needed.
 
-## Example Services
+## Services
 
-- **Nginx (master proxy):** Routes traffic to your local projects
+- **dock-proxy (Nginx):** Reverse proxy that forwards requests to localhost ports on your host machine
+- **nginx-master (optional):** Reverse proxy for Docker containers on dockmaster network (currently disabled)
 - **MySQL:** Development database
 - **Mailpit:** Catch-all email testing
 
@@ -34,9 +36,59 @@ You can add more containers (e.g., monitoring, Redis, custom scripts) by editing
 
 ## Helper scripts
 
-### Add new site (reverse proxy) easily
+### Add new proxy site (localhost ports)
 
-You can use the `scripts/add-site.sh` script to quickly add a new domain (vhost) to your DockMaster Nginx reverse proxy, including SSL certificate generation with mkcert.
+The `scripts/add-proxy.sh` script allows you to quickly add a new domain that proxies to ports on your **host machine** (localhost). This is ideal for projects running directly on your Mac/Linux machine outside of Docker.
+
+#### Usage
+
+```sh
+./scripts/add-proxy.sh <domain> [--http=PORT] [--https=PORT]
+```
+
+- `<domain>`: Name of your project (without domain suffix, e.g. `castable`)
+- `--http=PORT`: (optional) HTTP port on localhost to proxy to
+- `--https=PORT`: (optional) HTTPS port on localhost to proxy to
+
+If no ports are specified, the script will run in **interactive mode** and prompt you for configuration.
+
+The script will:
+1. Read `DNSMASQ_DOMAIN` from your `.env` (default: `.test`)
+2. Add the domain to `/etc/hosts` (requires sudo)
+3. Generate SSL certificate with mkcert (only if HTTPS is enabled)
+4. Create an Nginx config in `proxy/conf.d/`
+5. Reload dock-proxy
+
+#### Examples
+
+```sh
+# HTTP and HTTPS on different ports
+./scripts/add-proxy.sh castable --http=8091 --https=8092
+
+# Only HTTP (no SSL certificate generated)
+./scripts/add-proxy.sh myapp --http=8080
+
+# Only HTTPS
+./scripts/add-proxy.sh secure-app --https=8443
+
+# Interactive mode (prompts for configuration)
+./scripts/add-proxy.sh myproject
+```
+
+#### How it works (macOS/Windows)
+
+On macOS and Windows, Docker runs in a VM, so the proxy uses `host.docker.internal` to access your host machine's ports. The dock-proxy container maps ports 80 and 443 from the container to your host, making your `.test` domains accessible in your browser.
+
+#### Requirements
+- [mkcert](https://github.com/FiloSottile/mkcert) must be installed (only needed for HTTPS)
+- Docker Compose stack must be running
+- `.env` file with `DNSMASQ_DOMAIN` (e.g. `.test`)
+
+---
+
+### Add new site (Docker containers - nginx-master)
+
+You can use the `scripts/add-site.sh` script to add domains that proxy to **Docker containers** on the dockmaster network. This requires enabling the `nginx-master` service in `docker-compose.yml`.
 
 #### Usage
 
@@ -52,12 +104,6 @@ You can use the `scripts/add-site.sh` script to quickly add a new domain (vhost)
   - `80` (default, proxy_pass to target:80)
 - `[port]`: (optional) For `fpm` type, specify the FastCGI port (default: 9000)
 
-The script will:
-1. Read `DNSMASQ_DOMAIN` from your `.env` (default: `.test`)
-2. Generate a certificate for `<project_name><DNSMASQ_DOMAIN>` using mkcert
-3. Create an Nginx config in `nginx/conf.d/`
-4. Reload Nginx
-
 #### Examples
 
 ```sh
@@ -71,10 +117,31 @@ The script will:
 ./scripts/add-site.sh myapp myapp-fpm fpm 9000
 ```
 
-#### Requirements
-- [mkcert](https://github.com/FiloSottile/mkcert) must be installed and available in your PATH
-- Docker Compose stack must be running
-- `.env` file with `DNSMASQ_DOMAIN` (e.g. `.test`)
+---
+
+### Reload Nginx
+
+After manual changes to configurations, you can reload the respective Nginx service:
+
+```sh
+# Reload dock-proxy (for localhost proxies)
+./scripts/reload-proxy.sh
+
+# Reload nginx-master (for Docker container proxies)
+./scripts/reload-nginx.sh
+```
+
+---
+
+## Switching between dock-proxy and nginx-master
+
+By default, **dock-proxy** is enabled (for localhost ports). If you need to proxy to Docker containers instead:
+
+1. Comment out the `dock-proxy` service in `docker-compose.yml`
+2. Uncomment the `nginx-master` service
+3. Restart: `docker compose up -d`
+
+Both services use ports 80 and 443, so only one can run at a time.
 
 ---
 

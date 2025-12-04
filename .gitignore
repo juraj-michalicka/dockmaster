@@ -4,3 +4,9 @@ nginx/log/
 nginx/certs/
 nginx/conf.d/*
 !nginx/conf.d/mailpit.conf
+proxy/log/
+proxy/certs/
+proxy/conf.d/*
+
+# macOS system files
+**/.DS_Store
