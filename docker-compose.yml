@@ -1,61 +1,46 @@
-version: '3.9'
-
 services:
-  # Original nginx-master - commented out, replaced by dock-proxy
-  # nginx:
-  #   image: nginx:latest
-  #   container_name: nginx-master
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./nginx/conf.d:/etc/nginx/conf.d:ro
-  #     - ./nginx/certs:/etc/nginx/certs:ro
-  #     - ./nginx/html:/usr/share/nginx/html:ro
-  #     - ./nginx/log:/var/log/nginx
-  #   depends_on:
-  #     - mailpit
-  #   networks:
-  #     - dockmaster
-
-  dock-proxy:
+  nginx:
     image: nginx:latest
-    container_name: dock-proxy
+    container_name: nginx-master
     ports:
       - "80:80"
       - "443:443"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./proxy/conf.d:/etc/nginx/conf.d:ro
-      - ./proxy/certs:/etc/nginx/certs:ro
-      - ./proxy/log:/var/log/nginx
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/log:/var/log/nginx
+    depends_on:
+      - mailpit
+    networks:
+      - dockmaster
 
-  # db:
-  #   image: mysql:8.0
-  #   container_name: dock-database
-  #   restart: unless-stopped
-  #   environment:
-  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-  #     MYSQL_DATABASE: dockmaster
-  #     MYSQL_USER: dockuser
-  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dockpass}
-  #   ports:
-  #     - "3306:3306"
-  #   volumes:
-  #     - db_data:/var/lib/mysql
-  #   networks:
-  #     - dockmaster
+  db:
+    image: mysql:8.0
+    container_name: dock-database
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: dockmaster
+      MYSQL_USER: dockuser
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dockpass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - dockmaster
 
-  # mailpit:
-  #   image: axllent/mailpit:latest
-  #   container_name: dock-mailpit
-  #   expose:
-  #     - "8025"
-  #   networks:
-  #     - dockmaster
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: dock-mailpit
+    expose:
+      - "8025"
+    networks:
+      - dockmaster
 
 # Example for adding more services:
 #  monitor:

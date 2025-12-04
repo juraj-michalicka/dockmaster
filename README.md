@@ -4,8 +4,7 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 ## Features
 
-- **dock-proxy**: Nginx reverse proxy for routing requests to localhost ports (your host machine services)
-- **nginx-master** (optional): Nginx reverse proxy for routing to Docker containers on dockmaster network
+- **nginx-master**: Unified Nginx reverse proxy for routing requests to both localhost ports (host machine services) and Docker containers on dockmaster network
 - MySQL database container
 - Mailpit for email testing
 - Easy to extend with more services (monitoring, helpers, etc.)
@@ -25,8 +24,7 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 ## Services
 
-- **dock-proxy (Nginx):** Reverse proxy that forwards requests to localhost ports on your host machine
-- **nginx-master (optional):** Reverse proxy for Docker containers on dockmaster network (currently disabled)
+- **nginx-master (Nginx):** Unified reverse proxy that forwards requests to both localhost ports on your host machine and Docker containers on dockmaster network
 - **MySQL:** Development database
 - **Mailpit:** Catch-all email testing
 
@@ -54,10 +52,10 @@ If no ports are specified, the script will run in **interactive mode** and promp
 
 The script will:
 1. Read `DNSMASQ_DOMAIN` from your `.env` (default: `.test`)
-2. Add the domain to `/etc/hosts` (requires sudo)
+2. Add the domain to `/etc/hosts` with IPv4 and IPv6 support (requires sudo)
 3. Generate SSL certificate with mkcert (only if HTTPS is enabled)
-4. Create an Nginx config in `proxy/conf.d/`
-5. Reload dock-proxy
+4. Create an Nginx config in `nginx/conf.d/`
+5. Reload nginx-master
 
 #### Examples
 
@@ -77,7 +75,7 @@ The script will:
 
 #### How it works (macOS/Windows)
 
-On macOS and Windows, Docker runs in a VM, so the proxy uses `host.docker.internal` to access your host machine's ports. The dock-proxy container maps ports 80 and 443 from the container to your host, making your `.test` domains accessible in your browser.
+On macOS and Windows, Docker runs in a VM, so the proxy uses `host.docker.internal` to access your host machine's ports. The nginx-master container maps ports 80 and 443 from the container to your host, making your `.test` domains accessible in your browser.
 
 #### Requirements
 - [mkcert](https://github.com/FiloSottile/mkcert) must be installed (only needed for HTTPS)
@@ -121,27 +119,11 @@ You can use the `scripts/add-site.sh` script to add domains that proxy to **Dock
 
 ### Reload Nginx
 
-After manual changes to configurations, you can reload the respective Nginx service:
+After manual changes to configurations, you can reload the Nginx service:
 
 ```sh
-# Reload dock-proxy (for localhost proxies)
-./scripts/reload-proxy.sh
-
-# Reload nginx-master (for Docker container proxies)
 ./scripts/reload-nginx.sh
 ```
-
----
-
-## Switching between dock-proxy and nginx-master
-
-By default, **dock-proxy** is enabled (for localhost ports). If you need to proxy to Docker containers instead:
-
-1. Comment out the `dock-proxy` service in `docker-compose.yml`
-2. Uncomment the `nginx-master` service
-3. Restart: `docker compose up -d`
-
-Both services use ports 80 and 443, so only one can run at a time.
 
 ---
 

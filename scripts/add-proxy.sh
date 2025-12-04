@@ -78,8 +78,8 @@ fi
 # Construct domain from project name and DNSMASQ_DOMAIN
 DOMAIN="$PROJECT_NAME${DNSMASQ_DOMAIN:-.test}"
 
-CONF_PATH="proxy/conf.d/$PROJECT_NAME.conf"
-CERTS_PATH="proxy/certs"
+CONF_PATH="nginx/conf.d/$PROJECT_NAME.conf"
+CERTS_PATH="nginx/certs"
 
 # Add domain to /etc/hosts
 if [ -f "scripts/add-test-domain.sh" ]; then
@@ -155,7 +155,7 @@ EOF
 fi
 
 # Reload nginx
-sh scripts/reload-proxy.sh
+sh scripts/reload-nginx.sh
 
 echo "Proxy for $DOMAIN configured and nginx reloaded."
 
