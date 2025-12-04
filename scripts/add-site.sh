@@ -77,8 +77,15 @@ server {
     server_name $DOMAIN;
     ssl_certificate     /etc/nginx/certs/$DOMAIN.crt;
     ssl_certificate_key /etc/nginx/certs/$DOMAIN.key;
+    
+    # DNS resolver for dynamic resolution
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
     location / {
-        proxy_pass https://$TARGET:443;
+        # Use variable to force dynamic DNS resolution
+        set \$backend "$TARGET";
+        proxy_pass https://\$backend:443;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -94,14 +101,21 @@ server {
     server_name $DOMAIN;
     ssl_certificate     /etc/nginx/certs/$DOMAIN.crt;
     ssl_certificate_key /etc/nginx/certs/$DOMAIN.key;
+    
+    # DNS resolver for dynamic resolution
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
     root /usr/share/nginx/html; # uprav podľa potreby
     index index.php index.html;
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
     }
     location ~ \.php$ {
+        # Use variable to force dynamic DNS resolution
+        set \$backend "$TARGET:$FPM_PORT";
         include fastcgi_params;
-        fastcgi_pass $TARGET:$FPM_PORT;
+        fastcgi_pass \$backend;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         fastcgi_index index.php;
     }
@@ -115,8 +129,15 @@ server {
     server_name $DOMAIN;
     ssl_certificate     /etc/nginx/certs/$DOMAIN.crt;
     ssl_certificate_key /etc/nginx/certs/$DOMAIN.key;
+    
+    # DNS resolver for dynamic resolution
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
     location / {
-        proxy_pass http://$TARGET:80;
+        # Use variable to force dynamic DNS resolution
+        set \$backend "$TARGET";
+        proxy_pass http://\$backend:80;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
