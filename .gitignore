@@ -8,5 +8,8 @@ proxy/log/
 proxy/certs/
 proxy/conf.d/*
 
+# Projects configuration (example is committed)
+projects.conf
+
 # macOS system files
 **/.DS_Store

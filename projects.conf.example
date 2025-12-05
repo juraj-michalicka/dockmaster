@@ -1,0 +1,70 @@
+# DockMaster Projects Configuration
+# Copy this file to projects.conf and configure your projects
+# projects.conf is git-ignored, only this example is committed
+
+# Example: Site project with PHP-FPM
+myapp:
+  type: site
+  domain: myapp.test
+  target:
+    container: myapp-nginx
+    proxy_type: fpm
+    fpm:
+      container: myapp-php-fpm
+      port: 9000
+      enabled: true
+  mysql:
+    port: 3308
+    target: myapp-mysql
+    target_port: 3306
+    enabled: true
+  ssl: true
+  docker:
+    compose: /path/to/myapp/docker-compose.yml
+    override: /path/to/myapp/docker-compose.override.yml
+  enabled: true
+
+# Example: Proxy project with Docker compose path
+another-project:
+  type: proxy
+  domain: another.test
+  http:
+    port: 8092
+    enabled: true
+  https:
+    port: null
+    enabled: false
+  mysql:
+    port: 3318
+    target: localhost
+    target_port: 3318
+    enabled: true
+  ssl: false
+  docker:
+    compose: /path/to/another/docker-compose.yml
+    override: null
+  enabled: true
+
+# Example: Proxy project with WSS (WebSocket Secure) support
+websocket-project:
+  type: proxy
+  domain: ws.test
+  http:
+    port: 8080
+    enabled: true
+  https:
+    port: 8080
+    enabled: true
+  wss:
+    enabled: true
+    port: 8080
+  mysql:
+    port: null
+    target: localhost
+    target_port: 3306
+    enabled: false
+  ssl: true
+  docker:
+    compose: null
+    override: null
+  enabled: true

@@ -5,11 +5,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # MySQL stream ports are dynamically mapped based on projects.conf
+      # Ports will be exposed as needed when projects are configured
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/stream.d:/etc/nginx/stream.d:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/html:/usr/share/nginx/html:ro
       - ./nginx/log:/var/log/nginx

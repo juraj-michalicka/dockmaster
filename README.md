@@ -4,7 +4,7 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 ## Features
 
-- **nginx-master**: Unified Nginx reverse proxy for routing requests to both localhost ports (host machine services) and Docker containers on dockmaster network
+- **nginx**: Unified Nginx reverse proxy for routing requests to both localhost ports (host machine services) and Docker containers on dockmaster network
 - MySQL database container
 - Mailpit for email testing
 - Easy to extend with more services (monitoring, helpers, etc.)
@@ -24,7 +24,7 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 ## Services
 
-- **nginx-master (Nginx):** Unified reverse proxy that forwards requests to both localhost ports on your host machine and Docker containers on dockmaster network
+- **nginx (Nginx):** Unified reverse proxy that forwards requests to both localhost ports on your host machine (via host.docker.internal) and Docker containers on dockmaster network
 - **MySQL:** Development database
 - **Mailpit:** Catch-all email testing
 
@@ -32,98 +32,197 @@ DockMaster is a local development environment manager inspired by tools like Lar
 
 You can add more containers (e.g., monitoring, Redis, custom scripts) by editing `docker-compose.yml`.
 
-## Helper scripts
+## Projects Configuration System
 
-### Add new proxy site (localhost ports)
+DockMaster uses a centralized YAML-based configuration system (`projects.conf`) to manage all your projects. This replaces the older `add-proxy.sh` and `add-site.sh` scripts with a unified management interface.
 
-The `scripts/add-proxy.sh` script allows you to quickly add a new domain that proxies to ports on your **host machine** (localhost). This is ideal for projects running directly on your Mac/Linux machine outside of Docker.
+### Requirements
 
-#### Usage
+- **[yq](https://github.com/mikefarah/yq)** - YAML processor (required)
+  ```sh
+  # macOS
+  brew install yq
+  
+  # Or download from: https://github.com/mikefarah/yq/releases
+  ```
+- **[mkcert](https://github.com/FiloSottile/mkcert)** - For SSL certificate generation (optional, needed for HTTPS)
 
-```sh
-./scripts/add-proxy.sh <domain> [--http=PORT] [--https=PORT]
-```
+### Getting Started
 
-- `<domain>`: Name of your project (without domain suffix, e.g. `castable`)
-- `--http=PORT`: (optional) HTTP port on localhost to proxy to
-- `--https=PORT`: (optional) HTTPS port on localhost to proxy to
+1. Copy the example configuration:
+   ```sh
+   cp projects.conf.example projects.conf
+   ```
 
-If no ports are specified, the script will run in **interactive mode** and prompt you for configuration.
+2. Edit `projects.conf` and configure your projects (or use the project manager script)
 
-The script will:
-1. Read `DNSMASQ_DOMAIN` from your `.env` (default: `.test`)
-2. Add the domain to `/etc/hosts` with IPv4 and IPv6 support (requires sudo)
-3. Generate SSL certificate with mkcert (only if HTTPS is enabled)
-4. Create an Nginx config in `nginx/conf.d/`
-5. Reload nginx-master
+3. Generate nginx configurations:
+   ```sh
+   ./scripts/project-manager.sh regenerate
+   ```
 
-#### Examples
+### Project Manager
 
-```sh
-# HTTP and HTTPS on different ports
-./scripts/add-proxy.sh castable --http=8091 --https=8092
+The `scripts/project-manager.sh` script is the main tool for managing projects:
 
-# Only HTTP (no SSL certificate generated)
-./scripts/add-proxy.sh myapp --http=8080
-
-# Only HTTPS
-./scripts/add-proxy.sh secure-app --https=8443
-
-# Interactive mode (prompts for configuration)
-./scripts/add-proxy.sh myproject
-```
-
-#### How it works (macOS/Windows)
-
-On macOS and Windows, Docker runs in a VM, so the proxy uses `host.docker.internal` to access your host machine's ports. The nginx-master container maps ports 80 and 443 from the container to your host, making your `.test` domains accessible in your browser.
-
-#### Requirements
-- [mkcert](https://github.com/FiloSottile/mkcert) must be installed (only needed for HTTPS)
-- Docker Compose stack must be running
-- `.env` file with `DNSMASQ_DOMAIN` (e.g. `.test`)
-
----
-
-### Add new site (Docker containers - nginx-master)
-
-You can use the `scripts/add-site.sh` script to add domains that proxy to **Docker containers** on the dockmaster network. This requires enabling the `nginx-master` service in `docker-compose.yml`.
-
-#### Usage
+#### Commands
 
 ```sh
-./scripts/add-site.sh <project_name> <target_container> [type] [port]
+# List all projects
+./scripts/project-manager.sh list
+
+# Add a new project (interactive)
+./scripts/project-manager.sh add myproject
+
+# Remove a project
+./scripts/project-manager.sh remove myproject
+
+# Enable/disable a project
+./scripts/project-manager.sh enable myproject
+./scripts/project-manager.sh disable myproject
+
+# Regenerate all nginx configs from projects.conf
+./scripts/project-manager.sh regenerate
+
+# Find free ports
+./scripts/project-manager.sh find-free-ports [http|https|mysql|all]
 ```
 
-- `<project_name>`: Name of your project (without domain suffix, e.g. `myapp`)
-- `<target_container>`: Name of the Docker container to proxy to (e.g. `myapp-nginx`)
-- `[type]`: (optional) Type of proxy. Options:
-  - `ssl` (proxy_pass to target:443)
-  - `fpm` (fastcgi_pass to target:9000 or custom port)
-  - `80` (default, proxy_pass to target:80)
-- `[port]`: (optional) For `fpm` type, specify the FastCGI port (default: 9000)
+### Projects Configuration Format
 
-#### Examples
+Projects are defined in `projects.conf` using YAML format:
+
+#### Proxy Project (localhost ports)
+
+```yaml
+myproject:
+  type: proxy
+  domain: myproject.test
+  http:
+    port: 8091
+    enabled: true
+  https:
+    port: null
+    enabled: false
+  mysql:
+    port: 33000
+    target: localhost
+    target_port: 3306
+    enabled: true
+  ssl: false
+  docker:
+    compose: /path/to/docker-compose.yml
+    override: null
+  enabled: true
+```
+
+#### Site Project (Docker containers)
+
+```yaml
+myapp:
+  type: site
+  domain: myapp.test
+  target:
+    container: myapp-nginx
+    proxy_type: fpm
+    fpm:
+      container: myapp-php-fpm
+      port: 9000
+      enabled: true
+  mysql:
+    port: 33001
+    target: myapp-mysql
+    target_port: 3306
+    enabled: true
+  ssl: true
+  docker:
+    compose: /path/to/myapp/docker-compose.yml
+    override: /path/to/myapp/docker-compose.override.yml
+  enabled: true
+```
+
+### Docker Project Management
+
+Use `scripts/docker-project.sh` to manage Docker Compose projects:
 
 ```sh
-# Proxy to container on port 80 (default)
-./scripts/add-site.sh myapp myapp-nginx
+# Start a project
+./scripts/docker-project.sh start myproject
 
-# Proxy to container on port 443 (SSL)
-./scripts/add-site.sh myapp myapp-nginx ssl
+# Stop a project
+./scripts/docker-project.sh stop myproject
 
-# PHP-FPM (FastCGI) proxy to port 9000
-./scripts/add-site.sh myapp myapp-fpm fpm 9000
+# Restart a project
+./scripts/docker-project.sh restart myproject
+
+# Show project status
+./scripts/docker-project.sh status myproject
+
+# Show project logs
+./scripts/docker-project.sh logs myproject
+./scripts/docker-project.sh logs myproject --follow
 ```
 
----
+### MySQL Stream Proxying
 
-### Reload Nginx
+Projects can configure MySQL TCP proxying through nginx stream module. When enabled, nginx will proxy MySQL connections from the configured port to the target MySQL server.
 
-After manual changes to configurations, you can reload the Nginx service:
+Example:
+```yaml
+myproject:
+  mysql:
+    port: 33000
+    target: myproject-mysql
+    target_port: 3306
+    enabled: true
+```
+
+This allows you to connect to `localhost:33000` and it will be proxied to `myproject-mysql:3306` on the Docker network.
+
+### Migration from Old Scripts
+
+If you have existing nginx configurations created with `add-proxy.sh` or `add-site.sh`, you can migrate them:
+
+```sh
+./scripts/migrate-to-projects-conf.sh
+```
+
+This will parse your existing `nginx/conf.d/*.conf` files and create a `projects.conf` file. Review and update the generated configuration as needed.
+
+### Helper Scripts
+
+#### Reload Nginx
+
+After manual changes to configurations:
 
 ```sh
 ./scripts/reload-nginx.sh
 ```
+
+#### Find Free Ports
+
+Find available ports for new projects:
+
+```sh
+./scripts/find-free-ports.sh [http|https|mysql|all]
+```
+
+### Port Ranges
+
+Default port ranges (configurable in `find-free-ports.sh`):
+- HTTP: 8000-8099
+- HTTPS: 44300-44399
+- MySQL: 33000-33099
+
+---
+
+## Legacy Scripts (Deprecated)
+
+The following scripts are deprecated in favor of the new `projects.conf` system:
+- `scripts/add-proxy.sh` - Use `project-manager.sh add` instead
+- `scripts/add-site.sh` - Use `project-manager.sh add` instead
+
+These scripts may still work but are not recommended for new projects.
 
 ---
 
