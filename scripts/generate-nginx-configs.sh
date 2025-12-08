@@ -80,8 +80,8 @@ for project in $projects; do
   
   echo "  Generating config for: $project ($domain)"
   
-  # Generate SSL certificate if SSL is enabled
-  if [ "$ssl" = "true" ]; then
+  # Generate SSL certificate if SSL is enabled (true or proxy mode)
+  if [ "$ssl" = "true" ] || [ "$ssl" = "proxy" ]; then
     if ! command -v mkcert >/dev/null 2>&1; then
       echo "    Warning: mkcert not found, SSL certificate not generated"
     else
@@ -111,9 +111,12 @@ for project in $projects; do
     wss_port=$(yq eval ".$project.wss.port" "$CONFIG_FILE" 2>/dev/null || echo "")
     
     # Determine if HTTP should redirect to HTTPS
+    # Redirect if SSL is enabled (true or proxy mode)
     should_redirect_http=false
-    if [ "$https_enabled" = "true" ] && [ "$ssl" = "true" ] && [ -n "$https_port" ] && [ "$https_port" != "null" ]; then
-      should_redirect_http=true
+    if [ "$https_enabled" = "true" ] && [ -n "$https_port" ] && [ "$https_port" != "null" ]; then
+      if [ "$ssl" = "true" ] || [ "$ssl" = "proxy" ]; then
+        should_redirect_http=true
+      fi
     fi
     
     # HTTP server block
@@ -152,7 +155,8 @@ EOF
     
     # HTTPS server block
     if [ "$https_enabled" = "true" ] && [ -n "$https_port" ] && [ "$https_port" != "null" ]; then
-      if [ "$ssl" = "true" ]; then
+      # Check if SSL is enabled (true, on) or proxy mode (proxy)
+      if [ "$ssl" = "true" ] || [ "$ssl" = "proxy" ]; then
         # Determine if we need WebSocket support
         if [ "$wss_enabled" = "true" ]; then
           # Use WSS port if specified, otherwise use HTTPS port
@@ -183,6 +187,12 @@ server {
 
 EOF
         else
+          # Determine backend protocol: proxy mode uses HTTP, true uses HTTPS
+          if [ "$ssl" = "proxy" ]; then
+            backend_protocol="http"
+          else
+            backend_protocol="https"
+          fi
           cat >> "$conf_file" <<EOF
 server {
     listen 443 ssl;
@@ -191,7 +201,7 @@ server {
     ssl_certificate_key /etc/nginx/certs/$domain.key;
     
     location / {
-        proxy_pass https://host.docker.internal:$https_port;
+        proxy_pass $backend_protocol://host.docker.internal:$https_port;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -239,8 +249,8 @@ EOF
       continue
     fi
     
-    # HTTP redirect to HTTPS (if SSL enabled)
-    if [ "$ssl" = "true" ]; then
+    # HTTP redirect to HTTPS (if SSL enabled - true or proxy mode)
+    if [ "$ssl" = "true" ] || [ "$ssl" = "proxy" ]; then
       cat >> "$conf_file" <<EOF
 server {
     listen 80;
@@ -254,7 +264,7 @@ EOF
     fi
     
     # HTTPS server block
-    if [ "$ssl" = "true" ]; then
+    if [ "$ssl" = "true" ] || [ "$ssl" = "proxy" ]; then
       if [ "$proxy_type" = "fpm" ]; then
         fpm_container=$(yq eval ".$project.target.fpm.container" "$CONFIG_FILE" 2>/dev/null || echo "$target_container")
         fpm_port=$(yq eval ".$project.target.fpm.port" "$CONFIG_FILE" 2>/dev/null || echo "9000")

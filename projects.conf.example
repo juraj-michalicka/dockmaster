@@ -68,3 +68,25 @@ websocket-project:
     compose: null
     override: null
   enabled: true
+
+# Example: Proxy project with SSL proxy mode
+# SSL proxy: nginx has SSL certificate, but proxies to HTTP backend
+ssl-proxy-project:
+  type: proxy
+  domain: proxyssl.test
+  http:
+    port: 8087
+    enabled: true
+  https:
+    port: 8087
+    enabled: true
+  mysql:
+    port: null
+    target: localhost
+    target_port: 3306
+    enabled: false
+  ssl: proxy
+  docker:
+    compose: null
+    override: null
+  enabled: true
