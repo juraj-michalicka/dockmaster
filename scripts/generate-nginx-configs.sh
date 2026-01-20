@@ -318,13 +318,56 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
     }
 }
 
 EOF
       else
         # Default: proxy_pass to target:80
-        cat >> "$conf_file" <<EOF
+        # Check if WSS is enabled for site type
+        wss_enabled=$(yq eval ".$project.wss.enabled" "$CONFIG_FILE" 2>/dev/null || echo "false")
+        wss_container=$(yq eval ".$project.wss.container" "$CONFIG_FILE" 2>/dev/null || echo "$target_container")
+        wss_port=$(yq eval ".$project.wss.port" "$CONFIG_FILE" 2>/dev/null || echo "80")
+        
+        if [ "$wss_enabled" = "true" ]; then
+          # Site with WebSocket support
+          cat >> "$conf_file" <<EOF
+server {
+    listen 443 ssl;
+    server_name $domain;
+    ssl_certificate     /etc/nginx/certs/$domain.crt;
+    ssl_certificate_key /etc/nginx/certs/$domain.key;
+    
+    # DNS resolver for dynamic resolution
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
+    location / {
+        # Use variable to force dynamic DNS resolution
+        set \$backend "$target_container";
+        set \$wss_backend "$wss_container";
+        proxy_pass http://\$backend:80;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}
+
+EOF
+        else
+          cat >> "$conf_file" <<EOF
 server {
     listen 443 ssl;
     server_name $domain;
@@ -343,10 +386,14 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
     }
 }
 
 EOF
+        fi
       fi
     fi
   fi
