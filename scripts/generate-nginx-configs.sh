@@ -345,10 +345,29 @@ server {
     resolver 127.0.0.11 valid=10s ipv6=off;
     resolver_timeout 5s;
     
+    # WebSocket location for Laravel Reverb (uses /app/ path)
+    location ~ ^/app/ {
+        # Use variable to force dynamic DNS resolution
+        set \$wss_backend "$wss_container";
+        proxy_pass http://\$wss_backend:$wss_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+    
+    # Regular HTTP location
     location / {
         # Use variable to force dynamic DNS resolution
         set \$backend "$target_container";
-        set \$wss_backend "$wss_container";
         proxy_pass http://\$backend:80;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
