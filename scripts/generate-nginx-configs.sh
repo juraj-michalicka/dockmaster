@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Generate nginx configurations from projects.conf
-# Generates nginx/conf.d/*.conf for HTTP/HTTPS and nginx/stream.d/*.conf for MySQL proxying
+# Generates nginx/conf.d/*.conf for HTTP/HTTPS and nginx/stream.d/*.conf for MySQL/PostgreSQL proxying
 
 set -e
 
@@ -239,14 +239,20 @@ EOF
     fi
     
   elif [ "$type" = "site" ]; then
-    # Site type - proxy to Docker containers
+    # Site type - proxy to Docker containers or to host port
     target_container=$(yq eval ".$project.target.container" "$CONFIG_FILE" 2>/dev/null || echo "")
+    target_port=$(yq eval ".$project.target.port" "$CONFIG_FILE" 2>/dev/null || echo "")
     proxy_type=$(yq eval ".$project.target.proxy_type" "$CONFIG_FILE" 2>/dev/null || echo "80")
     
-    if [ -z "$target_container" ]; then
-      echo "    Warning: Project '$project' has no target container, skipping"
+    # Require either target.container (for DNS resolution) or target.port (for host.docker.internal)
+    if [ -z "$target_container" ] && { [ -z "$target_port" ] || [ "$target_port" = "null" ]; }; then
+      echo "    Warning: Project '$project' has no target container or port, skipping"
       rm -f "$conf_file"
       continue
+    fi
+    use_target_port=false
+    if [ -n "$target_port" ] && [ "$target_port" != "null" ] && [ "$proxy_type" != "fpm" ]; then
+      use_target_port=true
     fi
     
     # HTTP redirect to HTTPS (if SSL enabled - true or proxy mode)
@@ -334,7 +340,53 @@ EOF
         
         if [ "$wss_enabled" = "true" ]; then
           # Site with WebSocket support
-          cat >> "$conf_file" <<EOF
+          if [ "$use_target_port" = "true" ]; then
+            cat >> "$conf_file" <<EOF
+server {
+    listen 443 ssl;
+    server_name $domain;
+    ssl_certificate     /etc/nginx/certs/$domain.crt;
+    ssl_certificate_key /etc/nginx/certs/$domain.key;
+    
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
+    location ~ ^/app/ {
+        proxy_pass http://host.docker.internal:$target_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+    
+    location / {
+        proxy_pass http://host.docker.internal:$target_port\$request_uri;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}
+
+EOF
+          else
+            cat >> "$conf_file" <<EOF
 server {
     listen 443 ssl;
     server_name $domain;
@@ -366,9 +418,9 @@ server {
     
     # Regular HTTP location
     location / {
-        # Use variable to force dynamic DNS resolution
+        # Use variable to force dynamic DNS resolution; \$request_uri ensures full path is passed
         set \$backend "$target_container";
-        proxy_pass http://\$backend:80;
+        proxy_pass http://\$backend:80\$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -385,22 +437,41 @@ server {
 }
 
 EOF
+          fi
         else
-          cat >> "$conf_file" <<EOF
+          # Default site type with static assets support (proper proxy buffering for js, css, etc.)
+          if [ "$use_target_port" = "true" ]; then
+            # Port-based routing: proxy to host port (deterministic); resolver needed for host.docker.internal
+            cat >> "$conf_file" <<EOF
 server {
     listen 443 ssl;
     server_name $domain;
     ssl_certificate     /etc/nginx/certs/$domain.crt;
     ssl_certificate_key /etc/nginx/certs/$domain.key;
     
-    # DNS resolver for dynamic resolution
     resolver 127.0.0.11 valid=10s ipv6=off;
     resolver_timeout 5s;
     
+    # Static assets (js, css, images, fonts) - explicit proxy settings for proper loading
+    location ~* \\.(css|js|jpg|jpeg|gif|png|svg|ico|webp|woff|woff2|ttf|eot|map)(\\?.*)?\$ {
+        proxy_pass http://host.docker.internal:$target_port\$request_uri;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering on;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
     location / {
-        # Use variable to force dynamic DNS resolution
-        set \$backend "$target_container";
-        proxy_pass http://\$backend:80;
+        proxy_pass http://host.docker.internal:$target_port\$request_uri;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -412,6 +483,55 @@ server {
 }
 
 EOF
+          else
+            # Container-based routing: Docker DNS resolution
+            cat >> "$conf_file" <<EOF
+server {
+    listen 443 ssl;
+    server_name $domain;
+    ssl_certificate     /etc/nginx/certs/$domain.crt;
+    ssl_certificate_key /etc/nginx/certs/$domain.key;
+    
+    # DNS resolver for dynamic resolution
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    resolver_timeout 5s;
+    
+    # Static assets (js, css, images, fonts) - explicit proxy settings for proper loading
+    # Use \$request_uri so full path and query string are passed when using variable in proxy_pass
+    location ~* \\.(css|js|jpg|jpeg|gif|png|svg|ico|webp|woff|woff2|ttf|eot|map)(\\?.*)?\$ {
+        set \$backend "$target_container";
+        proxy_pass http://\$backend:80\$request_uri;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering on;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
+    location / {
+        # Use variable to force dynamic DNS resolution; \$request_uri ensures full path is passed
+        set \$backend "$target_container";
+        proxy_pass http://\$backend:80\$request_uri;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Ssl on;
+    }
+}
+
+EOF
+          fi
         fi
       fi
     fi
@@ -428,23 +548,20 @@ EOF
     if [ -n "$mysql_port" ] && [ "$mysql_port" != "null" ]; then
       stream_file="$NGINX_STREAM_D/$project-mysql.conf"
       
+      if [ "$mysql_target" = "localhost" ]; then
+        mysql_backend="host.docker.internal:$mysql_target_port"
+      else
+        mysql_backend="$mysql_target:$mysql_target_port"
+      fi
+      
       {
         echo "# Generated by generate-nginx-configs.sh"
         echo "# MySQL stream proxy for $project"
         echo ""
-        echo "upstream ${project}_mysql {"
-        
-        if [ "$mysql_target" = "localhost" ]; then
-          echo "    server host.docker.internal:$mysql_target_port;"
-        else
-          echo "    server $mysql_target:$mysql_target_port;"
-        fi
-        
-        echo "}"
-        echo ""
         echo "server {"
         echo "    listen $mysql_port;"
-        echo "    proxy_pass ${project}_mysql;"
+        echo "    set \$backend \"$mysql_backend\";"
+        echo "    proxy_pass \$backend;"
         echo "    proxy_timeout 1s;"
         echo "    proxy_responses 1;"
         echo "    error_log /var/log/nginx/${project}-mysql-error.log;"
@@ -452,6 +569,41 @@ EOF
       } > "$stream_file"
       
       echo "    Generated MySQL stream config: $mysql_port -> $mysql_target:$mysql_target_port"
+    fi
+  fi
+
+  # Generate PostgreSQL stream config if enabled
+  postgres_enabled=$(yq eval ".$project.postgres.enabled" "$CONFIG_FILE" 2>/dev/null || echo "false")
+  
+  if [ "$postgres_enabled" = "true" ]; then
+    postgres_port=$(yq eval ".$project.postgres.port" "$CONFIG_FILE" 2>/dev/null || echo "")
+    postgres_target=$(yq eval ".$project.postgres.target" "$CONFIG_FILE" 2>/dev/null || echo "localhost")
+    postgres_target_port=$(yq eval ".$project.postgres.target_port" "$CONFIG_FILE" 2>/dev/null || echo "5432")
+    
+    if [ -n "$postgres_port" ] && [ "$postgres_port" != "null" ]; then
+      stream_file="$NGINX_STREAM_D/$project-postgres.conf"
+      
+      if [ "$postgres_target" = "localhost" ]; then
+        postgres_backend="host.docker.internal:$postgres_target_port"
+      else
+        postgres_backend="$postgres_target:$postgres_target_port"
+      fi
+      
+      {
+        echo "# Generated by generate-nginx-configs.sh"
+        echo "# PostgreSQL stream proxy for $project"
+        echo ""
+        echo "server {"
+        echo "    listen $postgres_port;"
+        echo "    set \$backend \"$postgres_backend\";"
+        echo "    proxy_pass \$backend;"
+        echo "    proxy_timeout 1s;"
+        echo "    proxy_responses 1;"
+        echo "    error_log /var/log/nginx/${project}-postgres-error.log;"
+        echo "}"
+      } > "$stream_file"
+      
+      echo "    Generated PostgreSQL stream config: $postgres_port -> $postgres_target:$postgres_target_port"
     fi
   fi
 done

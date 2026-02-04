@@ -118,6 +118,8 @@ myproject:
 
 #### Site Project (Docker containers)
 
+**By container name (Docker DNS):** Nginx resolves the container name on the dockmaster network. Your project's override must attach the service to the `dockmaster` network and set `container_name` to match (e.g. `container_name: myapp-nginx`). If you see wrong-project routing or "file not found", prefer **by port** below.
+
 ```yaml
 myapp:
   type: site
@@ -140,6 +142,25 @@ myapp:
     override: /path/to/myapp/docker-compose.override.yml
   enabled: true
 ```
+
+**By port (recommended on shared dockmaster network):** Set `target.port` to a unique host port. The project's nginx must publish that port (e.g. in `docker-compose.override.yml`: `ports: ["8081:80"]` and attach to the dockmaster network). Routing then goes to `host.docker.internal:PORT` and does not depend on Docker DNS, so it is deterministic. Use `scripts/find-free-ports.sh` to pick a free port (HTTP range 8000–8099).
+
+```yaml
+myapp:
+  type: site
+  domain: myapp.test
+  target:
+    container: myapp-nginx
+    port: 8081
+    proxy_type: 80
+  ssl: true
+  docker:
+    compose: /path/to/myapp/docker-compose.yml
+    override: /path/to/myapp/docker-compose.override.yml
+  enabled: true
+```
+
+When the site is reached via HTTPS (e.g. https://myapp.test), DockMaster sends `X-Forwarded-Proto: https` and related headers. The backend app (e.g. Laravel) must **trust these headers** and generate asset/redirect URLs with `https://`, otherwise the browser will block CSS/JS as mixed content. In Laravel: configure `TrustProxies` (e.g. trust the proxy IP or `*` in local) and set `APP_URL=https://myapp.test`.
 
 ### Docker Project Management
 

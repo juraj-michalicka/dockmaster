@@ -205,16 +205,16 @@ logs_project() {
 # Main command dispatcher
 case "${1:-}" in
   start)
-    start_project "$2"
+    start_project "$2" "$3"
     ;;
   stop)
-    stop_project "$2"
+    stop_project "$2" "$3"
     ;;
   restart)
-    restart_project "$2"
+    restart_project "$2" "$3"
     ;;
   status)
-    status_project "$2"
+    status_project "$2" "$3"
     ;;
   logs)
     logs_project "$2" "$3" "$4" "$5"

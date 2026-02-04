@@ -90,3 +90,25 @@ ssl-proxy-project:
     compose: null
     override: null
   enabled: true
+
+# Example: Site project with target.port (recommended when using shared dockmaster network)
+# Uses a unique host port instead of Docker DNS; avoids wrong-project routing / "file not found".
+# In the project's docker-compose.override.yml: add dockmaster network and expose nginx, e.g.:
+#   services:
+#     nginx:
+#       ports: ["8081:80"]
+#       networks: [dockmaster]
+#   networks:
+#     dockmaster: { external: true }
+site-by-port:
+  type: site
+  domain: sitebyport.test
+  target:
+    container: sitebyport-nginx
+    port: 8081
+    proxy_type: 80
+  ssl: true
+  docker:
+    compose: /path/to/project/docker-compose.yml
+    override: /path/to/project/docker-compose.override.yml
+  enabled: true
