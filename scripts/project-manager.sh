@@ -268,9 +268,16 @@ toggle_project() {
 }
 
 # Function to regenerate nginx configs
+# Optional arg: project name (key in projects.conf). If omitted, regenerate all.
 regenerate_configs() {
+  local project_name="${1:-}"
+
   if [ -f "$SCRIPT_DIR/generate-nginx-configs.sh" ]; then
-    sh "$SCRIPT_DIR/generate-nginx-configs.sh"
+    if [ -n "$project_name" ]; then
+      sh "$SCRIPT_DIR/generate-nginx-configs.sh" "$project_name"
+    else
+      sh "$SCRIPT_DIR/generate-nginx-configs.sh"
+    fi
   else
     echo "Error: generate-nginx-configs.sh not found"
     exit 1
@@ -305,7 +312,7 @@ case "${1:-}" in
     toggle_project "disable" "$2"
     ;;
   regenerate)
-    regenerate_configs
+    regenerate_configs "${2:-}"
     ;;
   find-free-ports)
     find_free_ports "$2"
@@ -321,7 +328,7 @@ case "${1:-}" in
     echo "  remove <project>        Remove a project"
     echo "  enable <project>        Enable a project"
     echo "  disable <project>       Disable a project"
-    echo "  regenerate              Regenerate all nginx configs"
+    echo "  regenerate [project]  Regenerate nginx configs (all or one project)"
     echo "  find-free-ports [type]   Find free ports (http|https|mysql|all)"
     echo ""
     exit 1
