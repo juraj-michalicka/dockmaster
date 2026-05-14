@@ -2,6 +2,7 @@ services:
   nginx:
     image: nginx:latest
     container_name: nginx-master
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
@@ -40,6 +41,7 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     container_name: dock-mailpit
+    restart: on-failure
     expose:
       - "8025"
     networks:
